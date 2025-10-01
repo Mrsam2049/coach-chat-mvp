@@ -1,0 +1,22 @@
+# Node
+node_modules/
+dist/
+npm-debug.log*
+pnpm-lock.yaml
+yarn.lock
+
+# Env & secretos
+.env
+.env.*
+!.env.example
+
+# SO / editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Tests / cobertura (si la agregas luego)
+coverage/
+.vitest/
+
