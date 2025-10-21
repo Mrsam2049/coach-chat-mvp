@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { systemPrompt, buildUserPrompt, simpleRecommendations } from '../utils/prompt.js';
 import { callOpenAI } from '../services/openai.js';
@@ -18,7 +18,7 @@ const ChatBodySchema = z.object({
   }).partial().default({})
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { message, context } = ChatBodySchema.parse(req.body);
     

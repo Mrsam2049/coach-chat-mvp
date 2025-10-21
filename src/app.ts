@@ -1,5 +1,4 @@
-import express from 'express';
-
+import express, { type Request, type Response, type NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
@@ -19,19 +18,19 @@ export function createApp() {
   app.use(pinoHttp());
   app.use(helmet());
 
-  // CORS con lista blanca
+  // CORS con lista blanca (tipado del callback)
   const allowed = new Set(ENV.ALLOWED_ORIGINS);
   app.use(
     cors({
-      origin(origin, cb) {
+      origin(origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) {
         if (!origin) return cb(null, true); // permite herramientas locales
         if (allowed.has(origin)) return cb(null, true);
         return cb(new Error(`CORS bloqueado: ${origin}`));
-      }
+      },
+      credentials: false
     })
   );
 
-  // Limitador (60 req/min por IP)
   app.use(
     rateLimit({
       windowMs: 60 * 1000,
@@ -43,27 +42,22 @@ export function createApp() {
 
   app.use(express.json({ limit: '50kb' }));
 
-  // Salud
-  app.get('/health', (_req, res) => res.json({ ok: true }));
+  app.get('/health', (_req: Request, res: Response) => res.json({ ok: true }));
 
-  // API
   app.use('/api/v1/chat', chatRouter);
 
-  // Widget estático: http://localhost:8787/widget/
   app.use(
     '/widget',
-    express.static(path.join(__dirname, '../public/widget'), {
-      index: 'index.html'
-    })
+    express.static(path.join(__dirname, '../public/widget'), { index: 'index.html' })
   );
 
-  // Manejador de errores en JSON
-  app.use((err: any, _req: any, res: any, _next: any) => {
+  // Manejador de errores en JSON con tipos
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err?.status || 500;
-    res.status(status).json({
-      error: err?.message || 'Error inesperado',
-      status
-    });
+    if (ENV.NODE_ENV !== 'production') {
+      console.error('HandlerError:', { status, message: err?.message });
+    }
+    res.status(status).json({ error: err?.message || 'Error inesperado', status });
   });
 
   return app;

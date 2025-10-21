@@ -11,4 +11,4 @@ Para iniciar el proyecto en tu máquina local:
 npm ci
 cp .env.example .env  # Copia y completa tu OPENAI_API_KEY y variables
 npm run dev
-# Accede a http://localhost:8787/widget/ para probar
+# Accede a http://localhost:8787/widget/ para probarrun dev
