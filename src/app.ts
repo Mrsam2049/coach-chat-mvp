@@ -18,23 +18,30 @@ export function createApp() {
   app.use(pinoHttp());
   app.use(helmet());
 
-  // Definición del middleware de CORS, para ser aplicado solo a la API
-  const allowed = new Set(ENV.ALLOWED_ORIGINS.split(',').map(s => s.trim()));
+  // ✅ ENV.ALLOWED_ORIGINS YA ES UN ARRAY (viene parseado en env.ts)
+  // lo convertimos a Set para búsqueda O(1)
+  const allowed = new Set(ENV.ALLOWED_ORIGINS);
+
+  // Middleware CORS que SOLO vamos a aplicar sobre /api/*
   const apiCors = cors({
-    // Tipado del callback de origen
     origin(origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) {
-      // 1. Permite llamadas sin Origin (como cURL, Postman o toolkits del navegador)
-      if (!origin || origin === 'null') return cb(null, true);
-      
-      // 2. Permite orígenes en la lista blanca
-      if (allowed.has(origin)) return cb(null, true);
-      
-      // 3. Bloquea el resto (esto era lo que causaba el 500)
+      // 1. Permite llamadas sin Origin (curl, Postman, etc.)
+      if (!origin || origin === 'null') {
+        return cb(null, true);
+      }
+
+      // 2. Permite orígenes que estén en la lista blanca (Render, Kajabi, etc.)
+      if (allowed.has(origin)) {
+        return cb(null, true);
+      }
+
+      // 3. Bloquea el resto
       return cb(new Error(`CORS bloqueado: ${origin}`));
     },
     credentials: false
   });
 
+  // Rate limiting global (protege todo el server)
   app.use(
     rateLimit({
       windowMs: 60 * 1000,
@@ -44,31 +51,38 @@ export function createApp() {
     })
   );
 
+  // Body parser JSON
   app.use(express.json({ limit: '50kb' }));
 
-  // Rutas de API con CORS aplicado
-  app.use('/api', apiCors); 
+  // 🔎 Health check (sin CORS)
+  app.get('/health', (_req: Request, res: Response) => {
+    res.json({ ok: true });
+  });
+
+  // 🧠 API protegida por CORS
+  app.use('/api', apiCors);
   app.use('/api/v1/chat', chatRouter);
 
-  // Endpoint de salud (no necesita CORS)
-  app.get('/health', (_req: Request, res: Response) => res.json({ ok: true }));
+  // 🌐 Estáticos públicos (no pasan por CORS)
+  // Esto sirve /favicon.ico si algún navegador lo pide
+  app.use(express.static(path.join(__dirname, '../public')));
 
-  // Servir archivos estáticos (no debe pasar por CORS)
-  app.use(
-    express.static(path.join(__dirname, '../public')) // Para servir /favicon.ico si existe
-  );
+  // Esto sirve el widget y el chat.js
   app.use(
     '/widget',
     express.static(path.join(__dirname, '../public/widget'), { index: 'index.html' })
   );
 
-  // Manejador de errores en JSON
+  // 🛡️ Manejador de errores global
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err?.status || 500;
     if (ENV.NODE_ENV !== 'production') {
       console.error('HandlerError:', { status, message: err?.message });
     }
-    res.status(status).json({ error: err?.message || 'Error inesperado', status });
+    res.status(status).json({
+      error: err?.message || 'Error inesperado',
+      status
+    });
   });
 
   return app;
