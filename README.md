@@ -5,7 +5,7 @@
 - Widget estático: `/widget`
 - Seguridad: Helmet, CORS allowlist, rate limiting, Zod
 
-## ⚙️ Desarrollo Local
+##  Desarrollo Local
 Para iniciar el proyecto en tu máquina local:
 ```bash
 npm ci
