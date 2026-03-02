@@ -1,36 +1,44 @@
 <!doctype html>
 <html lang="es">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Coach Chat (MVP)</title>
-    <style>
-      body { font-family: system-ui, Arial, sans-serif; margin: 0; }
-      .wrap { max-width: 720px; margin: 0 auto; padding: 16px; }
-      .box { border: 1px solid #ddd; border-radius: 12px; padding: 12px; min-height: 320px; }
-      .msg { margin: 8px 0; }
-      .user { text-align: right; }
-      .assistant { text-align: left; }
-      .bubble { display: inline-block; padding: 8px 12px; border-radius: 12px; }
-      .bubble.user { background: #e8f0ff; }
-      .bubble.assistant { background: #f6f6f6; }
-      .row { display: flex; gap: 8px; margin-top: 12px; }
-      input[type="text"] { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #ccc; }
-      button { padding: 10px 14px; border: 0; border-radius: 8px; background: #2f60ff; color: white; cursor: pointer; }
-      button:disabled { opacity: 0.6; cursor: not-allowed; }
-    </style>
-  </head>
-  <body>
-    <div class="wrap">
-      <h1>Coach Chat (MVP)</h1>
-      <div id="box" class="box" aria-live="polite" role="log"></div>
-      <div class="row">
-        <input id="input" type="text" placeholder="Escribe tu pregunta…" />
-        <button id="send">Enviar</button>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Aurora — Asistente del Curso</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-title">Aurora — Asistente del Curso</div>
+        <div class="brand-subtitle" id="status"></div>
       </div>
-      <p id="status" style="font-size: 12px; color: #666; margin-top: 8px;"></p>
-    </div>
+    </header>
 
-    <script src="./chat.js" type="module"></script>
-  </body>
+    <main class="chat">
+      <div id="box" class="chat-box"></div>
+    </main>
+
+    <footer class="composer">
+      <div class="composer-inner">
+        <textarea id="input" rows="1" placeholder="Escribe tu pregunta..." autocomplete="off"></textarea>
+          <button id="send" type="button" aria-label="Enviar mensaje">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+      <path d="M5 12L19 12M19 12L13 6M19 12L13 18"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+    </svg>
+  </button>
+      </div>
+      <!-- <div class="composer-hint">
+        Responde con base en el contenido del programa. No compartas datos personales.
+      </div> -->
+    </footer>
+  </div>
+
+  <script src="vendor/marked.min.js"></script>
+  <script src="chat.js"></script>
+</body>
 </html>

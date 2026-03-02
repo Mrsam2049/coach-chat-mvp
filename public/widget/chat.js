@@ -1,35 +1,89 @@
 const box = document.getElementById('box');
 const input = document.getElementById('input');
 const btn = document.getElementById('send');
+btn.disabled = true;
 const statusEl = document.getElementById('status');
 
 const url = new URL(window.location.href);
 const moduleName = url.searchParams.get('module') || 'general';
 const uid = url.searchParams.get('uid') || 'guest';
 
+let typingEl = null;
+const MAX_TEXTAREA_HEIGHT = 160;
+
+function autosizeTextarea() {
+  if (!input) return;
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, MAX_TEXTAREA_HEIGHT) + 'px';
+}
+
+input.addEventListener('input', () => {
+  autosizeTextarea();
+  btn.disabled = !input.value.trim();
+});
+
 function addMsg(role, text) {
   const div = document.createElement('div');
   div.className = `msg ${role}`;
+
   const bubble = document.createElement('div');
   bubble.className = `bubble ${role}`;
-  bubble.textContent = text;
+
+  if (role === 'assistant' && typeof marked !== 'undefined') {
+    bubble.innerHTML = marked.parse(String(text));
+  } else {
+    bubble.textContent = String(text);
+  }
+
   div.appendChild(bubble);
   box.appendChild(div);
   box.scrollTop = box.scrollHeight;
 }
 
+function showTyping() {
+  if (typingEl) return;
+
+  const div = document.createElement('div');
+  div.className = 'msg assistant';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble assistant';
+
+  bubble.innerHTML = `
+    <div class="typing">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+    </div>
+  `;
+
+  div.appendChild(bubble);
+  box.appendChild(div);
+  typingEl = div;
+  box.scrollTop = box.scrollHeight;
+}
+
+function hideTyping() {
+  if (!typingEl) return;
+  typingEl.remove();
+  typingEl = null;
+}
+
 async function sendMessage() {
   const text = input.value.trim();
   if (!text) return;
+  if (btn.disabled) return;
+
   addMsg('user', text);
   input.value = '';
+  autosizeTextarea();
   btn.disabled = true;
-  statusEl.textContent = 'Pensando…';
-
-
+  statusEl.textContent = '';
 
   try {
-    const res = await fetch('/api/v1/chat', {
+    showTyping();
+
+    const res = await fetch(`${window.location.origin}/api/v1/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -41,40 +95,33 @@ async function sendMessage() {
         }
       })
     });
+
     const data = await res.json();
 
-    // Verificamos si la respuesta HTTP es un error (res.ok es false si el status es 4xx o 5xx)
+    // ✅ Manejo de error HTTP dentro del try (res y data existen aquí)
     if (!res.ok) {
-      if (res.status === 429) {
-        addMsg('assistant', 'Estamos temporalmente sin cupo de IA. Por favor, intenta de nuevo en unas horas.');
-      } else {
-        // Muestra el mensaje de error que viene del backend (si existe)
-        addMsg('assistant', `Error: ${data?.error || 'No se pudo procesar tu mensaje.'}`);
-      }
-      return; // Salir de la función si hubo error
+      addMsg('assistant', `Error: ${data?.error || 'No se pudo procesar tu mensaje.'}`);
+      return;
     }
 
     if (data?.answer) addMsg('assistant', data.answer);
-    
-    if (Array.isArray(data?.recommendations) && data.recommendations.length) {
-      const extras = data.recommendations
-        .map(r => `• ${r.title}${r.reason ? ` — ${r.reason}` : ''}`)
-        .join('\n');
-      addMsg('assistant', `Recomendaciones:\n${extras}`);
-    }
   } catch (e) {
-    addMsg('assistant', 'Hubo un error en la conexión. Por favor, revisa tu red.');
+    addMsg('assistant', 'Error de conexión. Revisa tu red e inténtalo de nuevo.');
   } finally {
+    hideTyping();
     btn.disabled = false;
-    statusEl.textContent = '';
     input.focus();
   }
 }
 
 btn.addEventListener('click', sendMessage);
 input.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') sendMessage();
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault(); // evita salto de línea
+    sendMessage();
+  }
 });
 
-// saludo inicial
-addMsg('assistant', `¡Hola! Estoy lista para ayudarte. Estás en el módulo: ${moduleName}.`);
+// Saludo inicial
+addMsg('assistant', `¡Hola! Soy Aurora. Estás en el módulo: ${moduleName}.`);
+autosizeTextarea();
