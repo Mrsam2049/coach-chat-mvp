@@ -11,7 +11,8 @@ export const ENV = {
   PORT: parseInt(process.env.PORT ?? '8787', 10),
   OPENAI_API_KEY: required('OPENAI_API_KEY'),
   OPENAI_MODEL: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+  OPENAI_VECTOR_STORE_ID: process.env.OPENAI_VECTOR_STORE_ID ?? '',
   ALLOWED_ORIGINS: (process.env.ALLOWED_ORIGINS ?? 'http://localhost:8787')
     .split(',')
-    .map(s => s.trim())
+    .map((s) => s.trim())
 };

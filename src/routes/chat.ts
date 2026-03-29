@@ -23,7 +23,8 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const { message, context } = ChatBodySchema.parse(req.body);
     
     // 1. Crea una "llave" única para esta pregunta y módulo
-    const key = (context.module || 'general') + '::' + message.trim().toLowerCase();
+    const key = 'rag-v1::' + (context.module || 'general') + '::' + message.trim().toLowerCase();
+    //const key = (context.module || 'general') + '::' + message.trim().toLowerCase();
 
     // 2. Intenta obtener la respuesta del caché
     const cached = getCached(key);
