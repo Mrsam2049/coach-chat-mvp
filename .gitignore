@@ -1,23 +1,78 @@
-# Node
-kb/
-node_modules/
-dist/
-npm-debug.log*
-pnpm-lock.yaml
-yarn.lock
+# =============================================================================
+#  .gitignore definitivo — Aurora / coach-chat-mvp
+#  Objetivo: que NUNCA se filtre información sensible al subir a GitHub/Render.
+# =============================================================================
 
-# Env & secretos
+# ─── Credenciales y variables de entorno (NUNCA al repo) ─────────────────────
 .env
 .env.*
+*.env
+# Único permitido: la plantilla SIN valores reales
 !.env.example
+# Volcados que generan los scripts (mismos IDs que el .env)
+vector_stores.env
+master_store.env
 
-# SO / editores
+# ─── Llaves / certificados / secretos (defensa en profundidad) ───────────────
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+*.keystore
+id_rsa
+id_rsa.*
+*.secret
+secrets.json
+credentials*.json
+serviceaccount*.json
+service-account*.json
+*.tfvars
+
+# ─── Base de conocimiento — contenido propietario del curso ──────────────────
+# Los PDFs ya están subidos a OpenAI (objetos file-…); la app NO los necesita
+# en el repo. Publicarlos sería filtrar propiedad intelectual de Paula Yépez.
+kb/
+*.pdf
+
+# ─── Dependencias ────────────────────────────────────────────────────────────
+node_modules/
+.npm/
+.pnp.*
+.yarn/*
+
+# ─── Build / salida compilada (Render la genera con `npm run build`) ─────────
+dist/
+build/
+*.tsbuildinfo
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ─── Caché / cobertura / temporales ──────────────────────────────────────────
+.cache/
+.eslintcache
+coverage/
+.nyc_output/
+tmp/
+temp/
+*.tmp
+*.bak
+*~
+
+# ─── Sistema operativo ───────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# ─── Editores / IDE ──────────────────────────────────────────────────────────
 .vscode/
 .idea/
-
-# Tests / cobertura (si la agregas luego)
-coverage/
-.vitest/
-
+*.swp
+*.swo

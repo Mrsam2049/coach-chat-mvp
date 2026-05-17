@@ -1,70 +1,123 @@
+/**
+ * Aurora — Servicio OpenAI
+ * ──────────────────────────────────────────────────────────────────────────
+ * callOpenAI   → respuesta completa (para caché / respuesta simple)
+ * streamOpenAI → streaming SSE delta a delta
+ *
+ * Ambas funciones aceptan `vectorStoreId` dinámico para soportar
+ * la estrategia de VS por módulo.
+ */
+
 import OpenAI from 'openai';
 import { ENV } from '../config/env.js';
 
-// Solo permitir MOCK fuera de producción
-const MOCK = process.env.NODE_ENV !== 'production' && process.env.MOCK_OPENAI === '1';
-console.log('VECTOR STORE ID:', ENV.OPENAI_VECTOR_STORE_ID);
-const client = new OpenAI({
-  apiKey: ENV.OPENAI_API_KEY
-});
+const openai = new OpenAI({ apiKey: ENV.OPENAI_API_KEY });
 
-export async function callOpenAI(systemPrompt: string, userPrompt: string): Promise<string> {
-  if (MOCK) {
-    return `Respuesta simulada ✅\n\nMensaje: "${userPrompt.slice(0, 140)}..."`;
-  }
+function fileSearchTool(vsId: string) {
+  return {
+    type: 'file_search' as const,
+    vector_store_ids: [vsId],
+    max_num_results: ENV.OPENAI_FILE_SEARCH_MAX_RESULTS,
+  };
+}
 
-  if (!ENV.OPENAI_VECTOR_STORE_ID) {
-    const err: any = new Error('Falta OPENAI_VECTOR_STORE_ID en variables de entorno.');
-    err.status = 500;
-    throw err;
-  }
+// ─── Tipos ───────────────────────────────────────────────────────────────────
 
-  const ac = new AbortController();
-  const timeout = setTimeout(() => ac.abort(), 20000);
+export interface StreamHandlers {
+  vectorStoreId?: string;
+  onToolStatus:   (status: string) => void;
+  onTextDelta:    (chunk: string) => void;
+  onDone:         () => void;
+}
 
-  try {
-    const response = await client.responses.create(
-      {
-        model: ENV.OPENAI_MODEL,
-        temperature: 0.3,
-        input: [
-          {
-            role: 'system',
-            content: [{ type: 'input_text', text: systemPrompt }]
-          },
-          {
-            role: 'user',
-            content: [{ type: 'input_text', text: userPrompt }]
-          }
-        ],
-        tools: [
-          {
-            type: 'file_search',
-            vector_store_ids: [ENV.OPENAI_VECTOR_STORE_ID],
-            max_num_results: 8
-          }
-        ]
-      },
-      {
-        signal: ac.signal
-      }
-    );
+// ─── callOpenAI ──────────────────────────────────────────────────────────────
 
-    clearTimeout(timeout);
+export async function callOpenAI(
+  system:        string,
+  userMessage:   string,
+  vectorStoreId?: string,
+): Promise<string> {
 
-    const text = response.output_text?.trim();
-    return text || 'No pude generar respuesta.';
-  } catch (e: any) {
-    clearTimeout(timeout);
+  const vsId = vectorStoreId ?? ENV.OPENAI_VECTOR_STORE_ID;
+  const t0 = Date.now();
 
-    if (e.name === 'AbortError') {
-      const err: any = new Error('Timeout al llamar a OpenAI (20s)');
-      err.status = 504;
-      throw err;
+  const response = await openai.responses.create({
+    model: ENV.OPENAI_MODEL,
+    max_output_tokens: ENV.OPENAI_MAX_OUTPUT_TOKENS,
+    input: [
+      { role: 'system', content: system },
+      { role: 'user',   content: userMessage },
+    ],
+    tools: [fileSearchTool(vsId)],
+  });
+
+  console.log(`[openai] callOpenAI total=${Date.now() - t0}ms model=${ENV.OPENAI_MODEL}`);
+
+  // Extraer solo el texto de la respuesta (ignorar tool_call chunks)
+  const text = response.output
+    ?.filter((item: any) => item.type === 'message')
+    ?.flatMap((item: any) => item.content ?? [])
+    ?.filter((c: any) => c.type === 'output_text')
+    ?.map((c: any) => c.text)
+    ?.join('') ?? '';
+
+  return text;
+}
+
+// ─── streamOpenAI ────────────────────────────────────────────────────────────
+
+export async function streamOpenAI(
+  system:       string,
+  userMessage:  string,
+  handlers:     StreamHandlers,
+): Promise<void> {
+
+  const vsId = handlers.vectorStoreId ?? ENV.OPENAI_VECTOR_STORE_ID;
+
+  const t0 = Date.now();
+  let tSearch = 0;
+  let tFirstToken = 0;
+
+  const stream = await openai.responses.stream({
+    model: ENV.OPENAI_MODEL,
+    max_output_tokens: ENV.OPENAI_MAX_OUTPUT_TOKENS,
+    input: [
+      { role: 'system', content: system },
+      { role: 'user',   content: userMessage },
+    ],
+    tools: [fileSearchTool(vsId)],
+  });
+
+  for await (const event of stream) {
+    // Evento de búsqueda en progreso
+    if (event.type === 'response.output_item.added' && event.item?.type === 'file_search_call') {
+      tSearch = Date.now() - t0;
+      handlers.onToolStatus('Consultando la base de conocimiento de Aurora...');
+      continue;
     }
 
-    const err: any = new Error(e?.message || 'Error al consultar OpenAI');
-    err.status = e?.status || 500;
-    throw err;
+    // Delta de texto
+    if (
+      event.type === 'response.output_text.delta' &&
+      typeof event.delta === 'string'
+    ) {
+      if (!tFirstToken) {
+        tFirstToken = Date.now() - t0;
+        console.log(`[openai] stream search=${tSearch}ms TTFT=${tFirstToken}ms model=${ENV.OPENAI_MODEL}`);
+      }
+      handlers.onTextDelta(event.delta);
+      continue;
+    }
+
+    // Respuesta completa
+    if (event.type === 'response.completed') {
+      console.log(`[openai] stream total=${Date.now() - t0}ms`);
+      handlers.onDone();
+      return;
+    }
   }
+
+  // Fallback por si el stream termina sin evento completed
+  console.log(`[openai] stream total=${Date.now() - t0}ms (sin evento completed)`);
+  handlers.onDone();
 }

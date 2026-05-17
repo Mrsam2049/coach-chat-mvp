@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aurora</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="./portal.css" />
+  <meta name="sb-url"  content="https://fijzsyjvrsbevwvjdlok.supabase.co">
+  <meta name="sb-anon" content="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZpanpzeWp2cnNiZXZ3dmpkbG9rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5MjI5MzQsImV4cCI6MjA5MDQ5ODkzNH0.ekLGNlGpL0XW3SCoBs-k3gfBb1gy6KPe21hh3u_tAOQ">
+</head>
+<body class="portal-body">
+  <div class="portal-app" id="portal-app">
+
+    <!-- ─── SIDEBAR ─────────────────────────────── -->
+    <aside class="portal-sidebar" id="portal-sidebar">
+      <div class="sidebar-top">
+        <div class="sidebar-brand">Aurora</div>
+
+        <button id="new-chat-btn" class="sidebar-new-chat">
+          Nueva conversación
+        </button>
+
+        <div id="conversation-list" class="conversation-list"></div>
+      </div>
+
+      <div class="sidebar-bottom">
+        <div class="sidebar-user">
+          <div class="sidebar-avatar" id="user-avatar">A</div>
+          <div class="sidebar-user-meta">
+            <div class="sidebar-user-name">Mi cuenta</div>
+            <div class="sidebar-user-email" id="user-email">Cargando...</div>
+          </div>
+        </div>
+        <button id="logout-btn" class="sidebar-logout">Cerrar sesión</button>
+      </div>
+    </aside>
+
+    <!-- Overlay móvil -->
+    <div id="mobile-sidebar-overlay" class="mobile-sidebar-overlay"></div>
+
+    <!-- ─── MAIN ──────────────────────────────────── -->
+    <main class="portal-main">
+
+      <header class="portal-header">
+        <button id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Abrir menú">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="portal-header-title" id="chat-title">Nueva conversación</div>
+      </header>
+
+      <section id="messages-area" class="messages-scroll">
+        <!-- Los mensajes se renderizan aquí por JS -->
+      </section>
+
+      <footer class="portal-composer-shell">
+        <form id="chat-form" class="portal-composer">
+          <textarea
+            id="chat-input"
+            rows="1"
+            placeholder="Escribe un mensaje..."
+            required
+          ></textarea>
+          <button type="submit" id="send-btn" class="send-btn" aria-label="Enviar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M5 12L19 12M19 12L13 6M19 12L13 18"
+                stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </form>
+      </footer>
+
+    </main>
+  </div>
+
+  <script src="/widget/vendor/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+  <script type="module" src="./dashboard.js"></script>
+  
+
+</body>
+</html>

@@ -8,7 +8,6 @@ const url = new URL(window.location.href);
 const moduleName = url.searchParams.get('module') || 'general';
 const uid = url.searchParams.get('uid') || 'guest';
 
-let typingEl = null;
 const MAX_TEXTAREA_HEIGHT = 160;
 
 function autosizeTextarea() {
@@ -29,8 +28,8 @@ function addMsg(role, text) {
   const bubble = document.createElement('div');
   bubble.className = `bubble ${role}`;
 
-  if (role === 'assistant' && typeof marked !== 'undefined') {
-    bubble.innerHTML = marked.parse(String(text));
+  if (role === 'assistant' && typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+    bubble.innerHTML = DOMPurify.sanitize(marked.parse(String(text)));
   } else {
     bubble.textContent = String(text);
   }
@@ -40,33 +39,13 @@ function addMsg(role, text) {
   box.scrollTop = box.scrollHeight;
 }
 
-function showTyping() {
-  if (typingEl) return;
-
-  const div = document.createElement('div');
-  div.className = 'msg assistant';
-
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble assistant';
-
-  bubble.innerHTML = `
-    <div class="typing">
-      <div class="dot"></div>
-      <div class="dot"></div>
-      <div class="dot"></div>
-    </div>
-  `;
-
-  div.appendChild(bubble);
-  box.appendChild(div);
-  typingEl = div;
+function renderAssistant(bubble, text) {
+  if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+    bubble.innerHTML = DOMPurify.sanitize(marked.parse(String(text)));
+  } else {
+    bubble.textContent = String(text);
+  }
   box.scrollTop = box.scrollHeight;
-}
-
-function hideTyping() {
-  if (!typingEl) return;
-  typingEl.remove();
-  typingEl = null;
 }
 
 async function sendMessage() {
@@ -80,10 +59,32 @@ async function sendMessage() {
   btn.disabled = true;
   statusEl.textContent = '';
 
-  try {
-    showTyping();
+  // Burbuja del asistente que se irá rellenando con el streaming
+  const div = document.createElement('div');
+  div.className = 'msg assistant';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble assistant';
+  bubble.innerHTML = `<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>`;
+  div.appendChild(bubble);
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
 
-    const res = await fetch(`${window.location.origin}/api/v1/chat`, {
+  let streamed = '';
+  let started = false;
+  let renderScheduled = false;
+
+  const flush = () => {
+    renderScheduled = false;
+    renderAssistant(bubble, streamed);
+  };
+  const scheduleRender = () => {
+    if (renderScheduled) return;
+    renderScheduled = true;
+    requestAnimationFrame(flush);
+  };
+
+  try {
+    const res = await fetch(`${window.location.origin}/api/v1/chat/widget-stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -96,19 +97,53 @@ async function sendMessage() {
       })
     });
 
-    const data = await res.json();
-
-    // ✅ Manejo de error HTTP dentro del try (res y data existen aquí)
-    if (!res.ok) {
-      addMsg('assistant', `Error: ${data?.error || 'No se pudo procesar tu mensaje.'}`);
-      return;
+    if (!res.ok || !res.body) {
+      throw new Error('No se pudo iniciar la respuesta.');
     }
 
-    if (data?.answer) addMsg('assistant', data.answer);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop() || '';
+
+      for (const part of parts) {
+        let eventName = 'message';
+        let data = '';
+        for (const line of part.split('\n')) {
+          if (line.startsWith('event:')) eventName = line.slice(6).trim();
+          if (line.startsWith('data:'))  data += line.slice(5).trim();
+        }
+        if (!data) continue;
+
+        const parsed = JSON.parse(data);
+
+        if (eventName === 'status' && !started) {
+          bubble.textContent = parsed.text;
+          box.scrollTop = box.scrollHeight;
+        }
+        if (eventName === 'delta') {
+          if (!started) { started = true; streamed = ''; }
+          streamed += parsed.text;
+          scheduleRender();
+        }
+        if (eventName === 'error') {
+          throw new Error(parsed.error || 'Error en la respuesta');
+        }
+      }
+    }
+
+    renderAssistant(bubble, streamed || 'No pude generar una respuesta.');
   } catch (e) {
-    addMsg('assistant', 'Error de conexión. Revisa tu red e inténtalo de nuevo.');
+    bubble.textContent = 'Error de conexión. Revisa tu red e inténtalo de nuevo.';
+    box.scrollTop = box.scrollHeight;
   } finally {
-    hideTyping();
     btn.disabled = false;
     input.focus();
   }
