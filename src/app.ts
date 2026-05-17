@@ -11,7 +11,7 @@ import authRouter from './routes/auth.js';
 import conversationsRouter from './routes/conversations.js';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname  = path.dirname(__filename);
 
 export function createApp() {
   const app = express();
@@ -19,14 +19,17 @@ export function createApp() {
   app.set('trust proxy', 1);
   app.use(pinoHttp());
 
-  // ─── Seguridad de headers ────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  //  SECURITY HEADERS GLOBALES (Helmet)
+  // ═══════════════════════════════════════════════════════════════════════
+  //  CSP estricto, HSTS 1 año, noSniff, frame-ancestors:none.
+  //  Solo /widget (más abajo) sobreescribe puntualmente.
   app.use(
     helmet({
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
           scriptSrc:  ["'self'", "https://cdn.jsdelivr.net"],
-          // Sin unsafe-inline: los estilos inline del portal son pocos y se pueden mover a clases
           styleSrc:   ["'self'"],
           imgSrc:     ["'self'", "data:"],
           connectSrc: [
@@ -37,89 +40,107 @@ export function createApp() {
           ],
           objectSrc:      ["'none'"],
           baseUri:        ["'self'"],
-          frameAncestors: ["'none'"],          // Evita clickjacking
-          upgradeInsecureRequests: []           // Fuerza HTTPS en producción
+          frameAncestors: ["'none'"],           // ← clickjacking protección portal/API
+          upgradeInsecureRequests: []
         }
       },
-      // HSTS: fuerza HTTPS por 1 año
-      strictTransportSecurity: {
-        maxAge: 31536000,
-        includeSubDomains: true
-      },
-      // Evita que el navegador adivine el Content-Type
-      noSniff: true,
-      // Referrer Policy estricto
-      referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
+      strictTransportSecurity: { maxAge: 31536000, includeSubDomains: true },
+      noSniff:        true,
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+      // Desactivar globalmente — lo seteamos a 'cross-origin' solo en /widget
+      crossOriginResourcePolicy: false,
     })
   );
 
-  // ─── CORS ────────────────────────────────────────────────────────────────
-  const allowed = new Set(ENV.ALLOWED_ORIGINS);
+  // ═══════════════════════════════════════════════════════════════════════
+  //  CORS — DOS POLÍTICAS
+  // ═══════════════════════════════════════════════════════════════════════
 
-  const apiCors = cors({
+  // Portal y endpoints privados: lista blanca cerrada
+  const allowed = new Set(ENV.ALLOWED_ORIGINS);
+  const portalCors = cors({
     origin(origin, cb) {
-      // Sin origin = same-origin o herramienta interna — permitir
-      if (!origin) return cb(null, true);
+      if (!origin) return cb(null, true);           // same-origin / curl interno
       if (allowed.has(origin)) return cb(null, true);
       return cb(new Error(`CORS bloqueado: ${origin}`));
     },
-    credentials: false,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    credentials:    false,
+    methods:        ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
   });
 
-  // ─── Rate limiting diferenciado ──────────────────────────────────────────
-  // Chat IA: máximo 10 mensajes/minuto por IP
+  // Widget público (Kajabi y futuras integraciones): CORS abierto
+  // Es seguro porque el endpoint widget-stream no expone datos privados,
+  // solo llama a OpenAI y devuelve texto. enforceWidgetOrigin en chat.ts
+  // aplica una segunda capa que valida el referer contra ALLOWED_ORIGINS.
+  const widgetCors = cors({
+    origin:         true,
+    credentials:    false,
+    methods:        ['POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type']
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  RATE LIMITING DIFERENCIADO
+  // ═══════════════════════════════════════════════════════════════════════
   const chatLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 10,
+    windowMs: 60 * 1000, max: 10,
     message: { error: 'Demasiadas solicitudes al chat. Espera un momento.' },
-    standardHeaders: true,
-    legacyHeaders: false
+    standardHeaders: true, legacyHeaders: false
   });
-
-  // Auth (login, activate): máximo 5 intentos/minuto para frenar brute-force
   const authLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 5,
-    message: { error: 'Demasiados intentos. Espera un minuto e inténtalo de nuevo.' },
-    standardHeaders: true,
-    legacyHeaders: false
+    windowMs: 60 * 1000, max: 5,                    // anti brute-force
+    message: { error: 'Demasiados intentos. Espera un minuto.' },
+    standardHeaders: true, legacyHeaders: false
   });
-
-  // General: resto de la API
   const generalLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 60,
-    standardHeaders: true,
-    legacyHeaders: false
+    windowMs: 60 * 1000, max: 60,
+    standardHeaders: true, legacyHeaders: false
   });
 
-  // ─── Body parser ─────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  //  BODY PARSER y HEALTH CHECK
+  // ═══════════════════════════════════════════════════════════════════════
   app.use(express.json({ limit: '50kb' }));
 
-  // ─── Health check (sin rate limit) ──────────────────────────────────────
   app.get('/health', (_req: Request, res: Response) => {
     res.json({ ok: true });
   });
 
-  // ─── API ─────────────────────────────────────────────────────────────────
-  app.use('/api', apiCors);
-  app.use('/api/v1/chat',          chatLimiter,    chatRouter);
-  app.use('/api/v1/auth',          authLimiter,    authRouter);
-  app.use('/api/v1/conversations', generalLimiter, conversationsRouter);
+  // ═══════════════════════════════════════════════════════════════════════
+  //  ENDPOINTS PÚBLICOS DEL WIDGET (CORS abierto)
+  //  Van ANTES del /api/v1/chat genérico para que el routing los tome
+  // ═══════════════════════════════════════════════════════════════════════
+  app.options('/api/v1/chat',              widgetCors);
+  app.options('/api/v1/chat/widget-stream', widgetCors);
+  app.post(   '/api/v1/chat',              widgetCors, chatLimiter, chatRouter);
+  app.post(   '/api/v1/chat/widget-stream', widgetCors, chatLimiter, chatRouter);
 
-  // ─── Estáticos ───────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  //  ENDPOINTS PRIVADOS DEL PORTAL (CORS cerrado + JWT en cada handler)
+  // ═══════════════════════════════════════════════════════════════════════
+  app.use('/api/v1/chat',          portalCors, chatLimiter,    chatRouter);
+  app.use('/api/v1/auth',          portalCors, authLimiter,    authRouter);
+  app.use('/api/v1/conversations', portalCors, generalLimiter, conversationsRouter);
 
-  // El widget DEBE poder embeberse como iframe dentro de Kajabi.
-  // Helmet pone globalmente `frame-ancestors 'none'` y `X-Frame-Options`,
-  // que bloquean cualquier iframe. SOLO para /widget relajamos esas dos
-  // cabeceras hacia los orígenes de confianza (ALLOWED_ORIGINS + self).
-  // El resto del sitio (portal, API) sigue con `frame-ancestors 'none'`.
+  // ═══════════════════════════════════════════════════════════════════════
+  //  ARCHIVOS ESTÁTICOS — WIDGET (con headers relajados controladamente)
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  //  El widget debe poder cargarse e embeberse desde Kajabi.
+  //  Relajamos DOS cosas SOLO para /widget:
+  //
+  //  1. frame-ancestors → permitir Kajabi y dominios en ALLOWED_ORIGINS
+  //     (sin tocar el portal, que sigue con frame-ancestors:none)
+  //
+  //  2. Cross-Origin-Resource-Policy → 'cross-origin' para que el navegador
+  //     permita descargar chat.js desde otro dominio.
+  //
+  //  Esto NO afecta la seguridad del portal/API porque son rutas distintas.
   const widgetCsp = [
     "default-src 'self'",
     "script-src 'self' https://cdn.jsdelivr.net",
-    "style-src 'self'",
+    "style-src 'self' 'unsafe-inline'",            // estilos inline del widget
     "img-src 'self' data:",
     `connect-src 'self' ${ENV.ALLOWED_ORIGINS.join(' ')} https://fijzsyjvrsbevwvjdlok.supabase.co https://cdn.jsdelivr.net`,
     "object-src 'none'",
@@ -129,21 +150,23 @@ export function createApp() {
   ].join('; ');
 
   app.use('/widget', (_req: Request, res: Response, next: NextFunction) => {
+    // Permite que Kajabi embeba el widget
     res.removeHeader('X-Frame-Options');
     res.setHeader('Content-Security-Policy', widgetCsp);
+    // Permite que el navegador descargue chat.js desde otro origen
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
     next();
   });
-// Permitir que el widget sea embebido en Kajabi y otros dominios externos
-app.use('/widget', (req, res, next) => {
-  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-  res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
-  next();
-});
+
   app.use(
     '/widget',
     express.static(path.join(__dirname, '../public/widget'), { index: 'index.html' })
   );
 
+  // ═══════════════════════════════════════════════════════════════════════
+  //  ARCHIVOS ESTÁTICOS — PORTAL (políticas estrictas globales)
+  // ═══════════════════════════════════════════════════════════════════════
   app.use(
     '/portal',
     express.static(path.join(__dirname, '../public/portal'), { index: 'login.html' })
@@ -151,7 +174,9 @@ app.use('/widget', (req, res, next) => {
 
   app.use(express.static(path.join(__dirname, '../public')));
 
-  // ─── Error handler global ────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  //  ERROR HANDLER GLOBAL — nunca filtra detalles internos en producción
+  // ═══════════════════════════════════════════════════════════════════════
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err?.status || 500;
 
@@ -159,7 +184,6 @@ app.use('/widget', (req, res, next) => {
       console.error('HandlerError:', { status, message: err?.message });
     }
 
-    // En producción nunca exponer detalles del error interno
     const message = ENV.NODE_ENV === 'production' && status === 500
       ? 'Error interno del servidor.'
       : err?.message || 'Error inesperado';
@@ -168,5 +192,4 @@ app.use('/widget', (req, res, next) => {
   });
 
   return app;
-  
 }
