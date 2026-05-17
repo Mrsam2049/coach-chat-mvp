@@ -133,7 +133,12 @@ export function createApp() {
     res.setHeader('Content-Security-Policy', widgetCsp);
     next();
   });
-
+// Permitir que el widget sea embebido en Kajabi y otros dominios externos
+app.use('/widget', (req, res, next) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
+  next();
+});
   app.use(
     '/widget',
     express.static(path.join(__dirname, '../public/widget'), { index: 'index.html' })
@@ -163,4 +168,5 @@ export function createApp() {
   });
 
   return app;
+  
 }
